@@ -5,12 +5,15 @@ namespace Cbr;
 
 class Api
 {
+    const CONTENT_TYPE_JOSN = 'application/json;charset=UTF-8';
+    const CONTENT_TYPE_FORM = 'multipart/form-data';
+
     private $_host;
     private $_ch;
     private $_token = null;
-    private $_defaultHeaders = [
-        'Content-Type: application/json;charset=UTF-8'
-    ];
+    private $_defaultHeaders = [];
+
+    private $_defaultContentType = self::CONTENT_TYPE_JOSN;
 
     public function __construct($host, $options = [])
     {
@@ -34,7 +37,7 @@ class Api
         curl_close($this->_ch);
     }
 
-    private function _request($url, $type, $data = null, $requireAuth = true)
+    private function _request($url, $type, $data = null, $requireAuth = true, $contentType = null)
     {
         curl_setopt($this->_ch, CURLOPT_URL, $url);
         if ($type == 'POST' || $type == 'PUT') {
@@ -42,22 +45,25 @@ class Api
         }
         curl_setopt($this->_ch, CURLOPT_CUSTOMREQUEST, $type);
 
+        $contentType = $contentType ? $contentType : $this->_defaultContentType;
         if ($data) {
-            curl_setopt($this->_ch, CURLOPT_POSTFIELDS, json_encode($data));
+            curl_setopt($this->_ch, CURLOPT_POSTFIELDS,
+                $contentType == self::CONTENT_TYPE_JOSN ? json_encode($data) : $data);
         }
 
         $headers = $this->_defaultHeaders;
+        $headers [] = 'Content-Type: ' . $contentType;
         if ($requireAuth) {
-            $headers = array_merge($this->_defaultHeaders, [
-                'Authorization: Bearer ' . $this->_token
-            ]);
+            $headers []= 'Authorization: Bearer ' . $this->_token;
         }
+//        print_r($headers);
         curl_setopt($this->_ch, CURLOPT_HTTPHEADER, $headers);
 
         $response = curl_exec($this->_ch);
         $httpCode = curl_getinfo($this->_ch, CURLINFO_HTTP_CODE);
         $error = curl_error($this->_ch);
         $errno = curl_errno($this->_ch);
+//        curl_setopt($this->_ch, CURLOPT_VERBOSE, true);
 
         if ($errno !== 0) {
             //print_r($error);
@@ -96,6 +102,17 @@ class Api
     public function import($userInfo)
     {
         return $this->_request($this->_host . '/api/rest.php/imports-user?action=single-import', 'POST', $userInfo);
+    }
+
+    public function importFromCsv($file)
+    {
+        if (!file_exists($file)) {
+            throw new \Exception('Unable to open file ' . $file);
+        }
+
+        return $this->_request($this->_host . '/api/rest.php/imports-user?action=import', 'POST', [
+            'file' => curl_file_create($file)
+        ], true, self::CONTENT_TYPE_FORM);
     }
 
     public function blockUser($userId, $blockMessage = '')
